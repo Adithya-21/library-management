@@ -10,10 +10,11 @@ st.set_page_config(page_title="Apex Digital Library", layout="wide", page_icon="
 database.create_tables()
 
 ADMIN_EMAIL = "adithya@example.com" 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Gets the actual root folder
 
-# Create folders if they don't exist
-for folder in ["previews", "full_books"]:
-    if not os.path.exists(folder): os.makedirs(folder, exist_ok=True)
+# Ensure storage folders exist
+for f in ["previews", "full_books"]:
+    os.makedirs(os.path.join(BASE_DIR, f), exist_ok=True)
 
 # --- AUTO-STOCK ENGINE ---
 def refresh_library_data():
@@ -29,41 +30,26 @@ def refresh_library_data():
 if not database.get_all_books():
     refresh_library_data()
 
-# ------------------ 2. THE AGGRESSIVE PDF FINDER ------------------
-def get_pdf_base64(file_path):
+# ------------------ 2. THE ABSOLUTE PDF LOADER ------------------
+def get_pdf_base64(full_path):
     try:
-        with open(file_path, "rb") as f:
+        with open(full_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8')
     except: return None
 
-def show_pdf(requested_path):
-    # Step 1: Try the exact path
-    final_path = requested_path
+def show_pdf(relative_path):
+    # Construct the absolute path from the root
+    abs_path = os.path.join(BASE_DIR, relative_path)
     
-    # Step 2: If not found, search the whole project aggressively
-    if not os.path.exists(final_path):
-        target_file = os.path.basename(requested_path).lower()
-        found = False
-        for root, dirs, files in os.walk("."): # Search every folder
-            for file in files:
-                if file.lower() == target_file:
-                    final_path = os.path.join(root, file)
-                    found = True
-                    break
-            if found: break
-
-    # Step 3: Render if found
-    if os.path.exists(final_path):
-        b64 = get_pdf_base64(final_path)
+    if os.path.exists(abs_path):
+        b64 = get_pdf_base64(abs_path)
         if b64:
             pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800px" style="border:2px solid #3b82f6; border-radius:15px;"></iframe>'
             st.markdown(pdf_display, unsafe_allow_html=True)
-            st.toast(f"✅ Loaded: {os.path.basename(final_path)}")
         else:
-            st.error("Encoding error.")
+            st.error("Error reading file.")
     else:
-        st.error(f"📂 File truly missing: {os.path.basename(requested_path)}")
-        st.warning("The server says this file is not in your repository.")
+        st.error(f"📂 Path Error: The server cannot find {abs_path}")
 
 def draw_clock():
     clock_html = """
@@ -95,8 +81,8 @@ if not st.session_state['auth']:
     st.markdown("<div class='hero-bg'><h1>📖 Apex Digital Library</h1></div>", unsafe_allow_html=True)
     t1, t2 = st.tabs(["🔑 Login", "📝 Register"])
     with t1:
-        e = st.text_input("Email", key="login_e").lower().strip()
-        p = st.text_input("Password", type="password", key="login_p")
+        e = st.text_input("Email", key="l_e").lower().strip()
+        p = st.text_input("Password", type="password", key="l_p")
         if st.button("Enter Library", use_container_width=True):
             user = database.verify_login(e, p)
             if user: st.session_state.update({'auth': True, 'user': user[0], 'email': e, 'celebrate': True}); st.rerun()
@@ -116,13 +102,13 @@ else:
     st.sidebar.markdown("### 🕒 System Time")
     draw_clock()
     
-    if st.sidebar.checkbox("🧪 Debug: Check Files", value=True):
-        st.sidebar.write(os.listdir("previews") if os.path.exists("previews") else "Folder Missing")
-
+    # IST CORRECTED GREETING
     ist_now = datetime.now() + timedelta(hours=5, minutes=30)
     hour = ist_now.hour
     greet = "🌅 Good Morning" if hour < 12 else "☀️ Good Afternoon" if hour < 17 else "🌙 Good Evening"
-    st.sidebar.subheader(f"{greet}, {st.session_state['user']}!")
+    
+    st.sidebar.subheader(f"{greet},")
+    st.sidebar.title(f"{st.session_state['user']}!")
 
     current_email = str(st.session_state['email']).lower().strip()
     is_admin = (current_email == ADMIN_EMAIL or current_email == "adithya@example.com")
@@ -193,16 +179,15 @@ else:
         with st.form("add_book_form", clear_on_submit=True):
             col_a, col_b = st.columns(2)
             t = col_a.text_input("Title"); a = col_b.text_input("Author"); cat = st.selectbox("Category", ["B.Tech", "Telugu", "Mythology"])
-            col_q1, col_q2 = st.columns(2)
-            stk = col_q1.number_input("Stock", min_value=1, value=1); pr = col_q2.number_input("Price (₹)", 0.0)
+            stk = st.number_input("Stock", min_value=1, value=1); pr = st.number_input("Price (₹)", 0.0)
             is_link = st.checkbox("External Link"); pre_f = st.file_uploader("Preview PDF", type="pdf")
             val = st.text_input("URL") if is_link else st.file_uploader("Full PDF", type="pdf")
             if st.form_submit_button("🚀 Commit to Database", use_container_width=True):
                 if t and a and pre_f and val:
                     ts = int(time.time()); pre_p = f"previews/{ts}_{pre_f.name}"
-                    with open(pre_p, "wb") as f: f.write(pre_f.getbuffer())
+                    with open(os.path.join(BASE_DIR, pre_p), "wb") as f: f.write(pre_f.getbuffer())
                     if is_link: fin_p = val
                     else:
                         fin_p = f"full_books/{ts}_{val.name}"
-                        with open(fin_p, "wb") as f: f.write(val.getbuffer())
+                        with open(os.path.join(BASE_DIR, fin_p), "wb") as f: f.write(val.getbuffer())
                     database.add_book(t, a, cat, stk, pr, pre_p, fin_p); st.success(f"Added '{t}'!"); time.sleep(1); st.rerun()
