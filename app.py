@@ -12,7 +12,7 @@ database.create_tables()
 ADMIN_EMAIL = "adithya@example.com" 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
 
-# Ensure storage folders exist - Updated to 'preview'
+# Ensure storage folders exist - Strictly 'preview' (no 's')
 for f in ["preview", "full_books"]:
     os.makedirs(os.path.join(BASE_DIR, f), exist_ok=True)
 
@@ -50,7 +50,7 @@ def show_pdf(relative_path):
             st.error("Error reading file.")
     else:
         st.error(f"📂 Path Error: The server cannot find {abs_path}")
-        st.info("💡 Double-check that your GitHub folder is named 'preview' (no 's').")
+        st.info("💡 Tip: Go to Librarian Desk and click '🔄 Reset & Refresh Database' to fix old paths.")
 
 def draw_clock():
     clock_html = """
@@ -168,8 +168,12 @@ else:
         st.title("🔐 Librarian Control Panel")
         col_r1, col_r2 = st.columns(2)
         if col_r1.button("🔄 Reset & Refresh Database", use_container_width=True):
-            conn = database.connect_db(); cursor = conn.cursor(); cursor.execute("DELETE FROM books"); conn.commit(); conn.close()
-            refresh_library_data(); st.success("Database synced!"); time.sleep(1); st.rerun()
+            conn = database.connect_db(); cursor = conn.cursor()
+            cursor.execute("DELETE FROM books") # WIPES THE OLD PATHS
+            conn.commit(); conn.close()
+            refresh_library_data() # RE-ADDS WITH THE NEW 'preview/' PATH
+            st.success("Database synced with 'preview/' folder!"); time.sleep(1); st.rerun()
+            
         if col_r2.button("📥 Export Audit Report (Excel)", use_container_width=True):
             conn = database.connect_db(); df_b = pd.read_sql_query("SELECT * FROM books", conn); df_u = pd.read_sql_query("SELECT name, email FROM users", conn); conn.close()
             buffer = io.BytesIO()
