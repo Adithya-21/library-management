@@ -7,14 +7,14 @@ import os, base64, time
 st.set_page_config(page_title="Lumina Pro | Library", layout="wide", page_icon="✨")
 database.create_tables()
 
-# !!! SECURITY: Replace this with your actual registered email !!!
+# THE OFFICIAL ADMIN EMAIL
 ADMIN_EMAIL = "adithya@example.com" 
 
 # Folder setup
 for folder in ["previews", "full_books"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
-# --- AUTO-STOCK ENGINE: Inserts your 4 major books if DB is empty ---
+# --- AUTO-STOCK ENGINE: Inserts your 4 major books automatically ---
 if not database.get_all_books():
     books_to_add = [
         ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 1, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
@@ -31,14 +31,12 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .main { background-color: #fdfdfd; }
-    
     .hero-bg {
         background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
         padding: 50px; border-radius: 20px; color: white;
         text-align: center; margin-bottom: 30px;
         box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3);
     }
-    
     .book-card {
         background: white; padding: 20px; border-radius: 18px;
         border: 1px solid #e5e7eb; transition: all 0.3s ease;
@@ -53,7 +51,6 @@ st.markdown("""
     }
     .book-title { color: #1f2937; font-weight: 800; font-size: 1.1rem; }
     .book-author { color: #6b7280; font-size: 0.85rem; margin-top: 5px; }
-    
     .payment-box {
         background: #ffffff; padding: 30px; border-radius: 20px;
         border: 2px solid #3b82f6; box-shadow: 0 20px 40px rgba(0,0,0,0.1);
@@ -72,17 +69,17 @@ def get_pdf_base64(file_path):
 def show_pdf(path):
     if os.path.exists(path):
         b64 = get_pdf_base64(path)
-        # Using <object> helps bypass standard Chrome security blocks
+        # The <object> tag works perfectly for GitHub-hosted previews
         pdf_display = f'''
             <object data="data:application/pdf;base64,{b64}" width="100%" height="750px" type="application/pdf" style="border-radius:15px; border:2px solid #3b82f6;">
                 <div style="padding:20px; text-align:center;">
-                    <p>Browser blocked the preview iframe.</p>
-                    <a href="data:application/pdf;base64,{b64}" download="preview.pdf" style="color:#3b82f6; font-weight:bold;">📥 Click here to Download Preview</a>
+                    <p>Browser blocked the preview. Use the link below:</p>
+                    <a href="data:application/pdf;base64,{b64}" download="preview.pdf" style="color:#3b82f6; font-weight:bold;">📥 Download Preview PDF</a>
                 </div>
             </object>'''
         st.markdown(pdf_display, unsafe_allow_html=True)
     else:
-        st.error(f"Preview archive not found on GitHub: {path}")
+        st.error(f"Preview file not found: {path}")
 
 def payment_gateway(book_title, price, cat_key):
     st.markdown(f"<div class='payment-box'>", unsafe_allow_html=True)
@@ -116,6 +113,8 @@ if not st.session_state['auth']:
             if st.button("Access Library", key="l_btn"):
                 user = database.verify_login(e_login, p_login)
                 if user:
+                    # SECURE INDEXING: We try to find the email correctly
+                    # If your table is (Name, Email, Password), Email is user[1]
                     st.session_state.update({'auth': True, 'user': user[0], 'email': user[1]})
                     st.rerun()
                 else: st.error("Verification Failed")
@@ -128,12 +127,21 @@ if not st.session_state['auth']:
 
 # ------------------ 6. MAIN APP (Logged In) ------------------
 else:
+    # --- ULTIMATE ADMIN CHECK ---
+    # We clean the string to prevent any "hidden space" bugs
+    current_user_email = str(st.session_state.get('email', '')).lower().strip()
+    target_admin = str(ADMIN_EMAIL).lower().strip()
+    
     st.sidebar.title(f"👋 Hi, {st.session_state['user']}")
     menu = ["📊 Dashboard", "📖 Explore Catalog"]
-    if st.session_state['email'] == ADMIN_EMAIL:
+    
+    # We check the variable AND the hard-coded string as a safety net
+    if current_user_email == target_admin or current_user_email == "adithya@example.com":
         menu.append("⚙️ Librarian Desk")
+        st.sidebar.success("🛡️ Admin Mode Active")
     
     choice = st.sidebar.selectbox("Navigation", menu)
+    
     if st.sidebar.button("Logout", key="logout_btn"):
         st.session_state.update({'auth': False, 'active_book': None}); st.rerun()
 
@@ -186,15 +194,15 @@ else:
                         
                         mode = st.session_state['active_mode']
                         if mode == "preview": 
-                            show_pdf(active_b[6])
+                            show_pdf(active_b[6]) # GitHub Preview Path
                         
                         elif mode in ["pay", "download"]:
                             payment_ready = payment_gateway(active_b[1], active_b[5], cat) if mode == "pay" else True
                             
                             if payment_ready:
                                 full_path = active_b[7]
-                                # Hybrid Check: Google Drive vs Local GitHub
-                                if full_path.startswith("http"):
+                                # HYBRID CHECK: Google Drive vs Local GitHub
+                                if str(full_path).startswith("http"):
                                     st.link_button("📥 Download Master File (External)", full_path, use_container_width=True)
                                 else:
                                     try:
@@ -216,11 +224,11 @@ else:
             cat = st.selectbox("Genre", ["B.Tech", "Telugu", "Mythology"])
             pr = st.number_input("Price (₹)", 0.0)
             
-            use_link = st.checkbox("External Link for Full Book (Use for files > 25MB)")
-            pre_file = st.file_uploader("10-Page Preview PDF (Max 25MB)", type="pdf")
+            use_link = st.checkbox("External Link for Full Book (Use for Drive links)")
+            pre_file = st.file_uploader("10-Page Preview PDF", type="pdf")
             
             if use_link:
-                full_path_input = st.text_input("Paste Direct Download Link (e.g., Google Drive)")
+                full_path_input = st.text_input("Paste Direct Download Link")
                 full_file = None
             else:
                 full_file = st.file_uploader("Full Book PDF (Max 25MB)", type="pdf")
@@ -240,4 +248,5 @@ else:
                     
                     database.add_book(t, a, cat, 1, pr, pre_p, full_p)
                     st.success(f"'{t}' successfully registered!")
+                    st.rerun()
                 else: st.error("Required data missing.")
