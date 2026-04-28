@@ -9,14 +9,12 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Apex Digital Library", layout="wide", page_icon="📖")
 database.create_tables()
 
-# THE MASTER KEYS
 ADMIN_EMAIL = "adithya@example.com" 
 
-# Folder Management for Storage
 for folder in ["previews", "full_books"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
-# --- AUTO-STOCK ENGINE: Mixed Pricing Applied ---
+# --- AUTO-STOCK ENGINE ---
 def refresh_library_data():
     books_to_add = [
         ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 5, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
@@ -30,30 +28,41 @@ def refresh_library_data():
 if not database.get_all_books():
     refresh_library_data()
 
-# ------------------ 2. UI STYLING & COMPONENTS ------------------
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-    .hero-bg {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        padding: 50px; border-radius: 25px; color: white;
-        text-align: center; margin-bottom: 30px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-    }
-    .book-card {
-        background: white; padding: 20px; border-radius: 18px;
-        border: 1px solid #e2e8f0; transition: all 0.3s ease;
-        margin-bottom: 15px; height: 180px; text-align: center;
-    }
-    .book-card:hover { transform: translateY(-5px); border-color: #3b82f6; box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
-    .book-title { color: #0f172a; font-weight: 800; font-size: 1.1rem; }
-    </style>
-    """, unsafe_allow_html=True)
+# ------------------ 2. HELPERS & SMART PDF VIEWER ------------------
+def get_pdf_base64(file_path):
+    try:
+        with open(file_path, "rb") as f:
+            return base64.b64encode(f.read()).decode('utf-8')
+    except: return None
+
+def show_pdf(requested_path):
+    # SMART FIX: Check for the file even if capitalization is different
+    final_path = requested_path
+    if not os.path.exists(requested_path):
+        folder = os.path.dirname(requested_path)
+        filename = os.path.basename(requested_path).lower()
+        if os.path.exists(folder):
+            for real_file in os.listdir(folder):
+                if real_file.lower() == filename:
+                    final_path = os.path.join(folder, real_file)
+                    break
+
+    if os.path.exists(final_path):
+        b64 = get_pdf_base64(final_path)
+        if b64:
+            # Most robust PDF display for Streamlit Cloud
+            pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800px" style="border:2px solid #3b82f6; border-radius:15px;"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+            st.caption(f"📍 Loaded from: {final_path}")
+        else:
+            st.error("Encoding error.")
+    else:
+        st.error(f"📂 File Missing: Cannot find '{requested_path}'")
+        st.info("Check your 'Debug: Check Files' in the sidebar to see actual filenames.")
 
 def draw_clock():
     clock_html = """
-    <div id="clock" style="font-family:'Inter',sans-serif; color:#3b82f6; font-size:24px; font-weight:800; text-align:center; padding:10px; background:#0f172a; border-radius:12px; border:1px solid #1e293b;">00:00:00</div>
+    <div id="clock" style="font-family:sans-serif; color:#3b82f6; font-size:22px; font-weight:800; text-align:center; padding:10px; background:#0f172a; border-radius:10px; border:1px solid #1e293b;">00:00:00</div>
     <script>
     function updateClock() {
         const now = new Date();
@@ -63,96 +72,56 @@ def draw_clock():
         document.getElementById('clock').innerText = `${hours}:${minutes}:${seconds}`;
     }
     setInterval(updateClock, 1000); updateClock();
-    </script>
-    """
-    st.sidebar.markdown("🕒 **System Time (IST)**")
+    </script>"""
     components.html(clock_html, height=70)
 
-# ------------------ 3. HELPERS ------------------
-@st.cache_data
-def get_pdf_base64(file_path):
-    try:
-        with open(file_path, "rb") as f: return base64.b64encode(f.read()).decode('utf-8')
-    except: return None
+# ------------------ 3. UI STYLING ------------------
+st.markdown("""<style>
+    .hero-bg { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 40px; border-radius: 20px; color: white; text-align: center; margin-bottom: 20px; }
+    .book-card { background: white; padding: 15px; border-radius: 15px; border: 1px solid #e2e8f0; text-align: center; margin-bottom: 10px; height: 160px; }
+    .book-title { color: #0f172a; font-weight: 800; font-size: 1rem; }
+    </style>""", unsafe_allow_html=True)
 
-def show_pdf(path):
-    if os.path.exists(path):
-        b64 = get_pdf_base64(path)
-        if b64:
-            pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800px" style="border-radius:20px; border:2px solid #3b82f6;"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
-        else:
-            st.error("❌ Error: Could not process PDF data.")
-    else:
-        st.error(f"📂 File Missing: Cannot find '{path}' on GitHub.")
-        st.info("💡 Ensure files are uploaded to the 'previews' folder on GitHub.")
-
-def payment_gateway(book_title, price, cat_key):
-    st.markdown("<div style='background:white; padding:30px; border-radius:20px; border:2px solid #3b82f6;'>", unsafe_allow_html=True)
-    st.subheader("🔒 Secure Checkout")
-    st.write(f"🛒 **Purchasing:** {book_title} (Price: ₹{price})")
-    col1, col2 = st.columns(2)
-    card = col1.text_input("Card Number", placeholder="XXXX XXXX XXXX XXXX", key=f"c_{cat_key}")
-    cvv = col2.text_input("CVV", type="password", key=f"v_{cat_key}")
-    if st.button("Authorize Payment", key=f"pay_btn_{cat_key}", use_container_width=True):
-        if len(card) >= 12:
-            with st.spinner("Processing..."): time.sleep(2)
-            st.balloons(); st.success("Transaction Complete!"); return True
-        else: st.error("Invalid Details")
-    st.markdown("</div>", unsafe_allow_html=True)
-    return False
-
-# ------------------ 4. AUTH & SESSION ------------------
+# ------------------ 4. AUTH & MAIN ------------------
 if 'auth' not in st.session_state:
-    st.session_state.update({
-        'auth': False, 'user': None, 'email': None, 'active_book': None, 
-        'active_mode': None, 'last_update': datetime.now().strftime("%d %b %Y, %I:%M %p"),
-        'celebrate': False
-    })
+    st.session_state.update({'auth': False, 'user': None, 'email': None, 'celebrate': False, 'active_book': None, 'active_mode': None})
 
 if not st.session_state['auth']:
-    st.markdown("<div class='hero-bg'><h1>📖 Apex Digital Library</h1><p>Modern Learning • Engineering Excellence</p></div>", unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 2, 1])
-    with col:
-        t1, t2 = st.tabs(["🔑 Login", "📝 Register"])
-        with t1:
-            e_in = st.text_input("Email", key="l_email").lower().strip()
-            p_in = st.text_input("Password", type="password", key="l_pass")
-            if st.button("Enter Library", use_container_width=True):
-                user = database.verify_login(e_in, p_in)
-                if user:
-                    st.session_state.update({'auth': True, 'user': user[0], 'email': e_in, 'celebrate': True})
-                    st.rerun()
-                else: st.error("Verification failed.")
-        with t2:
-            n_reg = st.text_input("Full Name")
-            e_reg = st.text_input("Email").lower().strip()
-            p_reg = st.text_input("Password", type="password")
-            if st.button("Create Account", use_container_width=True):
-                if n_reg and e_reg and p_reg:
-                    database.add_user(n_reg, e_reg, p_reg)
-                    st.success("🎉 Hurrah! Thank you for joining our Apex family. Proceed to login!")
-                else: st.warning("Please fill all fields.")
+    st.markdown("<div class='hero-bg'><h1>📖 Apex Digital Library</h1></div>", unsafe_allow_html=True)
+    t1, t2 = st.tabs(["🔑 Login", "📝 Register"])
+    with t1:
+        e = st.text_input("Email", key="login_e").lower().strip()
+        p = st.text_input("Password", type="password", key="login_p")
+        if st.button("Enter Library", use_container_width=True):
+            user = database.verify_login(e, p)
+            if user: st.session_state.update({'auth': True, 'user': user[0], 'email': e, 'celebrate': True}); st.rerun()
+    with t2:
+        n_reg = st.text_input("Full Name")
+        e_reg = st.text_input("Email").lower().strip()
+        p_reg = st.text_input("Password", type="password")
+        if st.button("Create Account", use_container_width=True):
+            if n_reg and e_reg and p_reg:
+                database.add_user(n_reg, e_reg, p_reg); st.success("🎉 Hurrah! Welcome to the Apex family. Login now!")
 
-# ------------------ 5. MAIN APP ------------------
 else:
     if st.session_state['celebrate']:
-        st.balloons(); st.toast(f"Welcome, {st.session_state['user']}! 🥳")
+        st.balloons(); st.toast(f"Welcome back, {st.session_state['user']}! 🥳")
         st.session_state['celebrate'] = False
 
     # Sidebar
+    st.sidebar.markdown("### 🕒 System Time")
     draw_clock()
+    
+    # DEV DEBUG TOOL
+    st.sidebar.divider()
+    if st.sidebar.checkbox("🧪 Debug: Check Files", value=True):
+        st.sidebar.write(os.listdir("previews") if os.path.exists("previews") else "No Previews Folder")
+
     ist_now = datetime.now() + timedelta(hours=5, minutes=30)
     hour = ist_now.hour
     greet = "🌅 Good Morning" if hour < 12 else "☀️ Good Afternoon" if hour < 17 else "🌙 Good Evening"
-    
-    st.sidebar.markdown(f"### {greet},")
+    st.sidebar.subheader(f"{greet},")
     st.sidebar.title(f"{st.session_state['user']}!")
-    
-    # Debug Tool in Sidebar
-    st.sidebar.divider()
-    if st.sidebar.checkbox("🧪 Debug: Check Files"):
-        st.sidebar.write(os.listdir("previews") if os.path.exists("previews") else "Folder Missing")
 
     current_email = str(st.session_state['email']).lower().strip()
     is_admin = (current_email == ADMIN_EMAIL or current_email == "adithya@example.com")
@@ -161,18 +130,17 @@ else:
     if is_admin: menu.append("⚙️ Librarian Desk")
     
     choice = st.sidebar.selectbox("Navigation", menu)
-    if st.sidebar.button("Logout", use_container_width=True):
-        st.session_state.update({'auth': False, 'active_book': None}); st.rerun()
+    if st.sidebar.button("Logout", use_container_width=True): st.session_state.update({'auth': False}); st.rerun()
 
     # A. DASHBOARD
     if choice == "📊 Dashboard":
         st.markdown("<div class='hero-bg'><h1>Library Metrics</h1></div>", unsafe_allow_html=True)
         books = database.get_all_books()
         c1, c2, c3 = st.columns(3)
-        c1.metric("📚 Unique Titles", len(books)); c2.metric("📦 Status", "🟢 Online"); c3.metric("💻 Node", "Primary Server")
+        c1.metric("📚 Titles", len(books)); c2.metric("📦 Status", "🟢 Online"); c3.metric("🇮🇳 Region", "IST")
         if books:
-            df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Category", "Stock", "Price", "URL", "Path"])
-            st.dataframe(df[["Title", "Author", "Category", "Price"]], use_container_width=True, hide_index=True)
+            df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Cat", "Stock", "Price", "URL", "Path"])
+            st.dataframe(df[["Title", "Author", "Cat", "Price"]], use_container_width=True, hide_index=True)
 
     # B. EXPLORE CATALOG
     elif choice == "📖 Explore Catalog":
@@ -202,15 +170,13 @@ else:
                         st.divider()
                         if st.button("❌ Close Viewer", key=f"close_{cat}", use_container_width=True):
                             st.session_state['active_book'] = None; st.rerun()
-                        mode = st.session_state['active_mode']
-                        if mode == "preview": show_pdf(active_b[6])
-                        elif mode in ["pay", "download"]:
-                            ok = payment_gateway(active_b[1], active_b[5], cat) if mode == "pay" else True
-                            if ok:
-                                f_path = active_b[7]
-                                if str(f_path).startswith("http"): st.link_button("🚀 Download", f_path, use_container_width=True)
-                                else:
-                                    with open(f_path, "rb") as f: st.download_button("💾 PDF", f, file_name=f"{active_b[1]}.pdf", use_container_width=True)
+                        
+                        if st.session_state['active_mode'] == 'preview':
+                            show_pdf(active_b[6])
+                        else:
+                            # Simple logic for Buy/Get
+                            st.info(f"Proceeding to {st.session_state['active_mode']} for {active_b[1]}...")
+                            if active_b[7].startswith("http"): st.link_button("🚀 Access Link", active_b[7], use_container_width=True)
 
     # C. LIBRARIAN DESK
     elif choice == "⚙️ Librarian Desk":
