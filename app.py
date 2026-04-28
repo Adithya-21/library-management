@@ -212,12 +212,15 @@ else:
     # C. LIBRARIAN DESK
     elif choice == "⚙️ Librarian Desk":
         st.title("🔐 Librarian Control Panel")
-        if st.button("🔄 Reset & Refresh Database", use_container_width=True):
+        
+        # 1. Master Reset & Audit Report
+        col_r1, col_r2 = st.columns(2)
+        if col_r1.button("🔄 Reset & Refresh Database", use_container_width=True):
             conn = database.connect_db(); cursor = conn.cursor()
             cursor.execute("DELETE FROM books"); conn.commit(); conn.close()
             refresh_library_data(); st.success("Database synced!"); time.sleep(1); st.rerun()
 
-        if st.button("📥 Export Audit Report (Excel)", use_container_width=True):
+        if col_r2.button("📥 Export Audit Report (Excel)", use_container_width=True):
             conn = database.connect_db(); df_books = pd.read_sql_query("SELECT * FROM books", conn)
             df_users = pd.read_sql_query("SELECT name, email FROM users", conn); conn.close()
             buffer = io.BytesIO()
@@ -225,3 +228,46 @@ else:
                 df_books.to_excel(writer, sheet_name='Inventory', index=False)
                 df_users.to_excel(writer, sheet_name='Users', index=False)
             st.download_button(label="📥 Download Excel Report", data=buffer.getvalue(), file_name="Apex_Library_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        # 2. Add New Resource Form (THE MISSING PIECE)
+        st.divider()
+        st.subheader("➕ Add New Resource")
+        with st.form("add_book_form", clear_on_submit=True):
+            col_a, col_b = st.columns(2)
+            t = col_a.text_input("Resource Title")
+            a = col_b.text_input("Author Name")
+            cat = st.selectbox("Category", ["B.Tech", "Telugu", "Mythology"])
+            
+            col_q1, col_q2 = st.columns(2)
+            stk = col_q1.number_input("Stock Count", min_value=1, value=1)
+            pr = col_q2.number_input("Retail Price (₹)", 0.0)
+            
+            is_link = st.checkbox("External Link (Google Drive)")
+            pre_f = st.file_uploader("Sample Preview (PDF)", type="pdf")
+            
+            if is_link: 
+                val = st.text_input("Resource URL")
+            else: 
+                val = st.file_uploader("Full Resource (PDF)", type="pdf")
+            
+            if st.form_submit_button("🚀 Commit to Database", use_container_width=True):
+                if t and a and pre_f and val:
+                    ts = int(time.time())
+                    # Process Preview
+                    pre_p = f"previews/{ts}_{pre_f.name}"
+                    with open(pre_p, "wb") as f: f.write(pre_f.getbuffer())
+                    
+                    # Process Full Resource
+                    if is_link: 
+                        fin_p = val
+                    else:
+                        fin_p = f"full_books/{ts}_{val.name}"
+                        with open(fin_p, "wb") as f: f.write(val.getbuffer())
+                    
+                    # Save to DB
+                    database.add_book(t, a, cat, stk, pr, pre_p, fin_p)
+                    st.success(f"Successfully added '{t}' to the catalog!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Please fill in all details and upload files.")
