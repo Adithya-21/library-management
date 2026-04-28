@@ -7,7 +7,7 @@ import os, base64, time
 st.set_page_config(page_title="Lumina Pro | Library", layout="wide", page_icon="✨")
 database.create_tables()
 
-# !!! SECURITY: Replace this with your actual registered email !!!
+# !!! CRITICAL: Ensure this matches your login email exactly !!!
 ADMIN_EMAIL = "adithya@example.com" 
 
 # Folder setup
@@ -72,7 +72,6 @@ def get_pdf_base64(file_path):
 def show_pdf(path):
     if os.path.exists(path):
         b64 = get_pdf_base64(path)
-        # Using <object> helps bypass standard Chrome security blocks
         pdf_display = f'''
             <object data="data:application/pdf;base64,{b64}" width="100%" height="750px" type="application/pdf" style="border-radius:15px; border:2px solid #3b82f6;">
                 <div style="padding:20px; text-align:center;">
@@ -116,6 +115,7 @@ if not st.session_state['auth']:
             if st.button("Access Library", key="l_btn"):
                 user = database.verify_login(e_login, p_login)
                 if user:
+                    # SQLite order: (name, email, password) -> user[0] is name, user[1] is email
                     st.session_state.update({'auth': True, 'user': user[0], 'email': user[1]})
                     st.rerun()
                 else: st.error("Verification Failed")
@@ -128,12 +128,19 @@ if not st.session_state['auth']:
 
 # ------------------ 6. MAIN APP (Logged In) ------------------
 else:
+    # --- ROBUST ADMIN CHECK ---
+    user_email = str(st.session_state['email']).lower().strip()
+    target_admin = str(ADMIN_EMAIL).lower().strip()
+    
     st.sidebar.title(f"👋 Hi, {st.session_state['user']}")
     menu = ["📊 Dashboard", "📖 Explore Catalog"]
-    if st.session_state['email'] == ADMIN_EMAIL:
+    
+    if user_email == target_admin:
         menu.append("⚙️ Librarian Desk")
     
     choice = st.sidebar.selectbox("Navigation", menu)
+    
+    # Logout Button
     if st.sidebar.button("Logout", key="logout_btn"):
         st.session_state.update({'auth': False, 'active_book': None}); st.rerun()
 
@@ -193,8 +200,7 @@ else:
                             
                             if payment_ready:
                                 full_path = active_b[7]
-                                # Hybrid Check: Google Drive vs Local GitHub
-                                if full_path.startswith("http"):
+                                if str(full_path).startswith("http"):
                                     st.link_button("📥 Download Master File (External)", full_path, use_container_width=True)
                                 else:
                                     try:
@@ -216,11 +222,11 @@ else:
             cat = st.selectbox("Genre", ["B.Tech", "Telugu", "Mythology"])
             pr = st.number_input("Price (₹)", 0.0)
             
-            use_link = st.checkbox("External Link for Full Book (Use for files > 25MB)")
-            pre_file = st.file_uploader("10-Page Preview PDF (Max 25MB)", type="pdf")
+            use_link = st.checkbox("External Link for Full Book (Use for Drive links)")
+            pre_file = st.file_uploader("10-Page Preview PDF", type="pdf")
             
             if use_link:
-                full_path_input = st.text_input("Paste Direct Download Link (e.g., Google Drive)")
+                full_path_input = st.text_input("Paste Direct Download Link")
                 full_file = None
             else:
                 full_file = st.file_uploader("Full Book PDF (Max 25MB)", type="pdf")
