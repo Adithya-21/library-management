@@ -10,19 +10,19 @@ st.set_page_config(page_title="Apex Digital Library", layout="wide", page_icon="
 database.create_tables()
 
 ADMIN_EMAIL = "adithya@example.com" 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Gets the actual root folder
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
 
-# Ensure storage folders exist
-for f in ["previews", "full_books"]:
+# Ensure storage folders exist - Updated to 'preview'
+for f in ["preview", "full_books"]:
     os.makedirs(os.path.join(BASE_DIR, f), exist_ok=True)
 
-# --- AUTO-STOCK ENGINE ---
+# --- AUTO-STOCK ENGINE: Path updated to 'preview/' ---
 def refresh_library_data():
     books_to_add = [
-        ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 5, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
-        ["Introduction to Python", "Guido van Rossum", "B.Tech", 3, 100.0, "previews/python_pre.pdf", "https://drive.google.com/uc?export=download&id=1AzZCmQV7l0_wLKJVXdRY-o3a9mDiEoXV"],
-        ["Neethikathalu", "Traditional", "Telugu", 10, 0.0, "previews/neethi_pre.pdf", "https://drive.google.com/uc?export=download&id=1CJVvRcYpPhObo4Nog7sIBqqfHcg5FvWf"],
-        ["Ramayan", "Valmiki", "Mythology", 2, 200.0, "previews/ramayan_pre.pdf", "https://drive.google.com/uc?export=download&id=1GHF1LNsDyHe8kzjBGQ0geCpVPJOJbR39"]
+        ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 5, 0.0, "preview/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
+        ["Introduction to Python", "Guido van Rossum", "B.Tech", 3, 100.0, "preview/python_pre.pdf", "https://drive.google.com/uc?export=download&id=1AzZCmQV7l0_wLKJVXdRY-o3a9mDiEoXV"],
+        ["Neethikathalu", "Traditional", "Telugu", 10, 0.0, "preview/neethi_pre.pdf", "https://drive.google.com/uc?export=download&id=1CJVvRcYpPhObo4Nog7sIBqqfHcg5FvWf"],
+        ["Ramayan", "Valmiki", "Mythology", 2, 200.0, "preview/ramayan_pre.pdf", "https://drive.google.com/uc?export=download&id=1GHF1LNsDyHe8kzjBGQ0geCpVPJOJbR39"]
     ]
     for b in books_to_add:
         database.add_book(b[0], b[1], b[2], b[3], b[4], b[5], b[6])
@@ -38,7 +38,7 @@ def get_pdf_base64(full_path):
     except: return None
 
 def show_pdf(relative_path):
-    # Construct the absolute path from the root
+    # Construct absolute path using current BASE_DIR
     abs_path = os.path.join(BASE_DIR, relative_path)
     
     if os.path.exists(abs_path):
@@ -50,6 +50,7 @@ def show_pdf(relative_path):
             st.error("Error reading file.")
     else:
         st.error(f"📂 Path Error: The server cannot find {abs_path}")
+        st.info("💡 Double-check that your GitHub folder is named 'preview' (no 's').")
 
 def draw_clock():
     clock_html = """
@@ -96,7 +97,8 @@ if not st.session_state['auth']:
 
 else:
     if st.session_state['celebrate']:
-        st.balloons(); st.session_state['celebrate'] = False
+        st.balloons(); st.toast(f"Welcome, {st.session_state['user']}! 🥳")
+        st.session_state['celebrate'] = False
 
     # Sidebar
     st.sidebar.markdown("### 🕒 System Time")
@@ -184,7 +186,7 @@ else:
             val = st.text_input("URL") if is_link else st.file_uploader("Full PDF", type="pdf")
             if st.form_submit_button("🚀 Commit to Database", use_container_width=True):
                 if t and a and pre_f and val:
-                    ts = int(time.time()); pre_p = f"previews/{ts}_{pre_f.name}"
+                    ts = int(time.time()); pre_p = f"preview/{ts}_{pre_f.name}"
                     with open(os.path.join(BASE_DIR, pre_p), "wb") as f: f.write(pre_f.getbuffer())
                     if is_link: fin_p = val
                     else:
