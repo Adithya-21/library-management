@@ -11,8 +11,9 @@ database.create_tables()
 
 ADMIN_EMAIL = "adithya@example.com" 
 
+# Create folders if they don't exist
 for folder in ["previews", "full_books"]:
-    if not os.path.exists(folder): os.makedirs(folder)
+    if not os.path.exists(folder): os.makedirs(folder, exist_ok=True)
 
 # --- AUTO-STOCK ENGINE ---
 def refresh_library_data():
@@ -28,7 +29,7 @@ def refresh_library_data():
 if not database.get_all_books():
     refresh_library_data()
 
-# ------------------ 2. HELPERS & SMART PDF VIEWER ------------------
+# ------------------ 2. THE AGGRESSIVE PDF FINDER ------------------
 def get_pdf_base64(file_path):
     try:
         with open(file_path, "rb") as f:
@@ -36,29 +37,33 @@ def get_pdf_base64(file_path):
     except: return None
 
 def show_pdf(requested_path):
-    # SMART FIX: Check for the file even if capitalization is different
+    # Step 1: Try the exact path
     final_path = requested_path
-    if not os.path.exists(requested_path):
-        folder = os.path.dirname(requested_path)
-        filename = os.path.basename(requested_path).lower()
-        if os.path.exists(folder):
-            for real_file in os.listdir(folder):
-                if real_file.lower() == filename:
-                    final_path = os.path.join(folder, real_file)
+    
+    # Step 2: If not found, search the whole project aggressively
+    if not os.path.exists(final_path):
+        target_file = os.path.basename(requested_path).lower()
+        found = False
+        for root, dirs, files in os.walk("."): # Search every folder
+            for file in files:
+                if file.lower() == target_file:
+                    final_path = os.path.join(root, file)
+                    found = True
                     break
+            if found: break
 
+    # Step 3: Render if found
     if os.path.exists(final_path):
         b64 = get_pdf_base64(final_path)
         if b64:
-            # Most robust PDF display for Streamlit Cloud
             pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800px" style="border:2px solid #3b82f6; border-radius:15px;"></iframe>'
             st.markdown(pdf_display, unsafe_allow_html=True)
-            st.caption(f"📍 Loaded from: {final_path}")
+            st.toast(f"✅ Loaded: {os.path.basename(final_path)}")
         else:
             st.error("Encoding error.")
     else:
-        st.error(f"📂 File Missing: Cannot find '{requested_path}'")
-        st.info("Check your 'Debug: Check Files' in the sidebar to see actual filenames.")
+        st.error(f"📂 File truly missing: {os.path.basename(requested_path)}")
+        st.warning("The server says this file is not in your repository.")
 
 def draw_clock():
     clock_html = """
@@ -101,27 +106,23 @@ if not st.session_state['auth']:
         p_reg = st.text_input("Password", type="password")
         if st.button("Create Account", use_container_width=True):
             if n_reg and e_reg and p_reg:
-                database.add_user(n_reg, e_reg, p_reg); st.success("🎉 Hurrah! Welcome to the Apex family. Login now!")
+                database.add_user(n_reg, e_reg, p_reg); st.success("🎉 Hurrah! Welcome to the family. Login now!")
 
 else:
     if st.session_state['celebrate']:
-        st.balloons(); st.toast(f"Welcome back, {st.session_state['user']}! 🥳")
-        st.session_state['celebrate'] = False
+        st.balloons(); st.session_state['celebrate'] = False
 
     # Sidebar
     st.sidebar.markdown("### 🕒 System Time")
     draw_clock()
     
-    # DEV DEBUG TOOL
-    st.sidebar.divider()
     if st.sidebar.checkbox("🧪 Debug: Check Files", value=True):
-        st.sidebar.write(os.listdir("previews") if os.path.exists("previews") else "No Previews Folder")
+        st.sidebar.write(os.listdir("previews") if os.path.exists("previews") else "Folder Missing")
 
     ist_now = datetime.now() + timedelta(hours=5, minutes=30)
     hour = ist_now.hour
     greet = "🌅 Good Morning" if hour < 12 else "☀️ Good Afternoon" if hour < 17 else "🌙 Good Evening"
-    st.sidebar.subheader(f"{greet},")
-    st.sidebar.title(f"{st.session_state['user']}!")
+    st.sidebar.subheader(f"{greet}, {st.session_state['user']}!")
 
     current_email = str(st.session_state['email']).lower().strip()
     is_admin = (current_email == ADMIN_EMAIL or current_email == "adithya@example.com")
@@ -136,8 +137,8 @@ else:
     if choice == "📊 Dashboard":
         st.markdown("<div class='hero-bg'><h1>Library Metrics</h1></div>", unsafe_allow_html=True)
         books = database.get_all_books()
-        c1, c2, c3 = st.columns(3)
-        c1.metric("📚 Titles", len(books)); c2.metric("📦 Status", "🟢 Online"); c3.metric("🇮🇳 Region", "IST")
+        c1, c2 = st.columns(2)
+        c1.metric("📚 Titles", len(books)); c2.metric("📦 Status", "🟢 Online")
         if books:
             df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Cat", "Stock", "Price", "URL", "Path"])
             st.dataframe(df[["Title", "Author", "Cat", "Price"]], use_container_width=True, hide_index=True)
@@ -154,14 +155,13 @@ else:
                 for idx, b in enumerate(data):
                     with cols[idx % 3]:
                         st.markdown(f"<div class='book-card'><div class='book-title'>{b[1]}</div><div>{b[2]}</div></div>", unsafe_allow_html=True)
-                        c1, c2 = st.columns(2)
-                        if c1.button("👁️ Preview", key=f"v_{cat}_{b[0]}"):
+                        if st.button("👁️ Preview", key=f"v_{cat}_{b[0]}"):
                             st.session_state.update({'active_book': b[0], 'active_mode': 'preview'})
                         if b[5] > 0:
-                            if c2.button(f"₹{int(b[5])} Buy", key=f"b_{cat}_{b[0]}"):
+                            if st.button(f"₹{int(b[5])} Buy", key=f"b_{cat}_{b[0]}"):
                                 st.session_state.update({'active_book': b[0], 'active_mode': 'pay'})
                         else:
-                            if c2.button("📥 Get", key=f"d_{cat}_{b[0]}"):
+                            if st.button("📥 Get", key=f"d_{cat}_{b[0]}"):
                                 st.session_state.update({'active_book': b[0], 'active_mode': 'download'})
 
                 if st.session_state['active_book']:
@@ -170,13 +170,10 @@ else:
                         st.divider()
                         if st.button("❌ Close Viewer", key=f"close_{cat}", use_container_width=True):
                             st.session_state['active_book'] = None; st.rerun()
-                        
                         if st.session_state['active_mode'] == 'preview':
                             show_pdf(active_b[6])
                         else:
-                            # Simple logic for Buy/Get
-                            st.info(f"Proceeding to {st.session_state['active_mode']} for {active_b[1]}...")
-                            if active_b[7].startswith("http"): st.link_button("🚀 Access Link", active_b[7], use_container_width=True)
+                            if active_b[7].startswith("http"): st.link_button("🚀 Access", active_b[7], use_container_width=True)
 
     # C. LIBRARIAN DESK
     elif choice == "⚙️ Librarian Desk":
