@@ -10,12 +10,12 @@ database.create_tables()
 
 ADMIN_EMAIL = "adithya@example.com" 
 
-# Folder setup
 for folder in ["previews", "full_books"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
-# --- AUTO-STOCK ENGINE: Mixed Pricing (Free & Paid) ---
-if not database.get_all_books():
+# --- AUTO-STOCK ENGINE ---
+def refresh_library_data():
+    # This logic adds the books if they don't exist
     books_to_add = [
         ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 5, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
         ["Introduction to Python", "Guido van Rossum", "B.Tech", 3, 100.0, "previews/python_pre.pdf", "https://drive.google.com/uc?export=download&id=1AzZCmQV7l0_wLKJVXdRY-o3a9mDiEoXV"],
@@ -24,6 +24,9 @@ if not database.get_all_books():
     ]
     for b in books_to_add:
         database.add_book(b[0], b[1], b[2], b[3], b[4], b[5], b[6])
+
+if not database.get_all_books():
+    refresh_library_data()
 
 # ------------------ 2. UI STYLING ------------------
 st.markdown("""
@@ -45,7 +48,6 @@ st.markdown("""
     }
     .book-card:hover { transform: translateY(-5px); border-color: #3b82f6; box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
     .book-title { color: #0f172a; font-weight: 800; font-size: 1.1rem; }
-    .status-text { font-size: 0.85rem; color: #94a3b8; font-style: italic; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -61,25 +63,18 @@ def show_pdf(path):
     if os.path.exists(path):
         b64 = get_pdf_base64(path)
         if b64:
-            pdf_display = f'''
-                <object data="data:application/pdf;base64,{b64}" width="100%" height="800px" type="application/pdf" style="border-radius:20px; border:2px solid #3b82f6;">
-                    <div style="padding:40px; text-align:center; background:#f1f5f9; border-radius:20px;">
-                        <h4>Digital Viewer</h4>
-                        <a href="data:application/pdf;base64,{b64}" download="preview.pdf" style="background-color:#3b82f6; color:white; padding:10px 20px; border-radius:8px; text-decoration:none;">📥 Download Preview</a>
-                    </div>
-                </object>'''
+            pdf_display = f'<object data="data:application/pdf;base64,{b64}" width="100%" height="800px" type="application/pdf" style="border-radius:20px; border:2px solid #3b82f6;"></object>'
             st.markdown(pdf_display, unsafe_allow_html=True)
-    else: st.error(f"Preview not found: {path}")
 
 def payment_gateway(book_title, price, cat_key):
-    st.markdown(f"<div style='background: white; padding: 30px; border-radius: 20px; border: 2px solid #3b82f6;'>", unsafe_allow_html=True)
+    st.markdown("<div style='background:white; padding:30px; border-radius:20px; border:2px solid #3b82f6;'>", unsafe_allow_html=True)
     st.subheader("🔒 Secure Checkout")
     st.write(f"🛒 **Purchasing:** {book_title}")
     st.markdown(f"<h3 style='color:#2563eb;'>Total: ₹{price}</h3>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     card = col1.text_input("Card Number", placeholder="XXXX XXXX XXXX XXXX", key=f"c_{cat_key}")
     cvv = col2.text_input("CVV", type="password", key=f"v_{cat_key}")
-    if st.button("Authorize Payment", key=f"pay_btn_{cat_key}"):
+    if st.button("Authorize Payment", key=f"pay_btn_{cat_key}", use_container_width=True):
         if len(card) >= 12:
             with st.spinner("Processing..."): time.sleep(2)
             st.balloons(); st.success("Transaction Complete!"); return True
@@ -119,9 +114,7 @@ else:
     
     st.sidebar.title(f"👋 Hi, {st.session_state['user']}")
     menu = ["📊 Dashboard", "📖 Explore Catalog"]
-    if is_admin:
-        menu.append("⚙️ Librarian Desk")
-        st.sidebar.success("🛡️ Librarian Mode")
+    if is_admin: menu.append("⚙️ Librarian Desk")
     
     choice = st.sidebar.selectbox("Navigation", menu)
     if st.sidebar.button("Logout"):
@@ -135,8 +128,6 @@ else:
         c1.metric("📚 Unique Titles", len(books))
         c2.metric("📦 Stock Available", sum([b[4] for b in books]) if books else 0)
         c3.metric("⚡ Status", "🟢 Online")
-        st.markdown(f"<p class='status-text'>🕒 Last System Sync: {st.session_state['last_update']}</p>", unsafe_allow_html=True)
-        
         if books:
             df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Category", "Stock", "Price", "URL", "Path"])
             st.dataframe(df[["Title", "Author", "Category", "Stock", "Price"]], use_container_width=True, hide_index=True)
@@ -157,11 +148,11 @@ else:
                         if c1.button("👁️ Preview", key=f"v_{cat}_{b[0]}"):
                             st.session_state.update({'active_book': b[0], 'active_mode': 'preview'})
                         
-                        # --- DYNAMIC BUTTON LOGIC ---
-                        if b[5] > 0: # If price is more than 0
+                        # --- PRICE LOGIC ---
+                        if b[5] > 0: # Price exists
                             if c2.button(f"₹{int(b[5])} Buy", key=f"b_{cat}_{b[0]}"):
                                 st.session_state.update({'active_book': b[0], 'active_mode': 'pay'})
-                        else: # If price is 0
+                        else: # Price is 0
                             if c2.button("📥 Get", key=f"d_{cat}_{b[0]}"):
                                 st.session_state.update({'active_book': b[0], 'active_mode': 'download'})
 
@@ -169,7 +160,7 @@ else:
                     active_b = next((x for x in data if x[0] == st.session_state['active_book']), None)
                     if active_b:
                         st.divider()
-                        if st.button("❌ Close Viewer", key=f"close_{cat}"):
+                        if st.button("❌ Close Viewer", key=f"close_{cat}", use_container_width=True):
                             st.session_state['active_book'] = None; st.rerun()
                         mode = st.session_state['active_mode']
                         if mode == "preview":
@@ -182,12 +173,24 @@ else:
                                     st.link_button("🚀 Download Full Book", f_path, use_container_width=True)
                                 else:
                                     with open(f_path, "rb") as f:
-                                        st.download_button("💾 Download Local PDF", f, file_name=f"{active_b[1]}.pdf", use_container_width=True)
+                                        st.download_button("💾 Download PDF", f, file_name=f"{active_b[1]}.pdf", use_container_width=True)
 
     # C. LIBRARIAN DESK
     elif choice == "⚙️ Librarian Desk":
         st.title("🔐 Librarian Control Panel")
-        if st.button("📥 Generate Audit Report (Excel)", use_container_width=True):
+        
+        # --- NEW MASTER RESET BUTTON ---
+        st.warning("⚠️ Change prices in code? Use this to sync the database.")
+        if st.button("🔄 Reset & Refresh Database", use_container_width=True):
+            conn = database.connect_db()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM books") # Wipes the book table
+            conn.commit()
+            conn.close()
+            refresh_library_data() # Re-adds with new code prices
+            st.success("Database synced with current code prices!"); time.sleep(1); st.rerun()
+
+        if st.button("📥 Export Audit Report (Excel)", use_container_width=True):
             conn = database.connect_db()
             df_books = pd.read_sql_query("SELECT * FROM books", conn)
             df_users = pd.read_sql_query("SELECT name, email FROM users", conn)
@@ -196,32 +199,4 @@ else:
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 df_books.to_excel(writer, sheet_name='Inventory', index=False)
                 df_users.to_excel(writer, sheet_name='Users', index=False)
-            st.download_button(label="📥 Download Report", data=buffer.getvalue(), 
-                             file_name="Apex_Library_Report.xlsx", 
-                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        
-        st.divider()
-        with st.form("add_book_form", clear_on_submit=True):
-            col_a, col_b = st.columns(2)
-            t = col_a.text_input("Title")
-            a = col_b.text_input("Author")
-            cat = st.selectbox("Category", ["B.Tech", "Telugu", "Mythology"])
-            col_q1, col_q2 = st.columns(2)
-            stk = col_q1.number_input("Copies", min_value=1, value=1)
-            pr = col_q2.number_input("Price", 0.0)
-            is_link = st.checkbox("External Drive Link")
-            pre_f = st.file_uploader("Preview PDF", type="pdf")
-            if is_link: val = st.text_input("Drive Link")
-            else: val = st.file_uploader("Full PDF", type="pdf")
-            if st.form_submit_button("🚀 Commit Book", use_container_width=True):
-                if t and a and pre_f and val:
-                    ts = int(time.time())
-                    pre_p = f"previews/{ts}_{pre_f.name}"
-                    with open(pre_p, "wb") as f: f.write(pre_f.getbuffer())
-                    if is_link: fin_p = val
-                    else:
-                        fin_p = f"full_books/{ts}_{val.name}"
-                        with open(fin_p, "wb") as f: f.write(val.getbuffer())
-                    database.add_book(t, a, cat, stk, pr, pre_p, fin_p)
-                    st.session_state['last_update'] = datetime.now().strftime("%d %b %Y, %I:%M %p")
-                    st.success(f"Added {t}. Database sync complete."); st.rerun()
+            st.download_button(label="📥 Download Report", data=buffer.getvalue(), file_name="Apex_Library_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
