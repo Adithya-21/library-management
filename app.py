@@ -2,20 +2,22 @@ import streamlit as st
 import database
 import pandas as pd
 import os, base64, time, io
+import streamlit.components.v1 as components
 from datetime import datetime
 
 # ------------------ 1. CONFIG & ADMIN SETUP ------------------
 st.set_page_config(page_title="Apex Digital Library", layout="wide", page_icon="📖")
 database.create_tables()
 
+# THE MASTER KEYS
 ADMIN_EMAIL = "adithya@example.com" 
 
+# Directory Management
 for folder in ["previews", "full_books"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
-# --- AUTO-STOCK ENGINE ---
+# --- AUTO-STOCK ENGINE: Specific Pricing Applied ---
 def refresh_library_data():
-    # This logic adds the books if they don't exist
     books_to_add = [
         ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 5, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
         ["Introduction to Python", "Guido van Rossum", "B.Tech", 3, 100.0, "previews/python_pre.pdf", "https://drive.google.com/uc?export=download&id=1AzZCmQV7l0_wLKJVXdRY-o3a9mDiEoXV"],
@@ -28,7 +30,7 @@ def refresh_library_data():
 if not database.get_all_books():
     refresh_library_data()
 
-# ------------------ 2. UI STYLING ------------------
+# ------------------ 2. UI STYLING & COMPONENTS ------------------
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
@@ -42,21 +44,35 @@ st.markdown("""
     .book-card {
         background: white; padding: 20px; border-radius: 18px;
         border: 1px solid #e2e8f0; transition: all 0.3s ease;
-        margin-bottom: 15px; height: 180px;
-        display: flex; flex-direction: column; justify-content: center;
-        text-align: center;
+        margin-bottom: 15px; height: 180px; text-align: center;
     }
     .book-card:hover { transform: translateY(-5px); border-color: #3b82f6; box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
     .book-title { color: #0f172a; font-weight: 800; font-size: 1.1rem; }
     </style>
     """, unsafe_allow_html=True)
 
+def draw_clock():
+    clock_html = """
+    <div id="clock" style="font-family:'Inter',sans-serif; color:#3b82f6; font-size:24px; font-weight:800; text-align:center; padding:10px; background:#0f172a; border-radius:12px; border:1px solid #1e293b;">00:00:00</div>
+    <script>
+    function updateClock() {
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        document.getElementById('clock').innerText = `${hours}:${minutes}:${seconds}`;
+    }
+    setInterval(updateClock, 1000); updateClock();
+    </script>
+    """
+    st.sidebar.markdown("🕒 **System Time (IST)**")
+    components.html(clock_html, height=70)
+
 # ------------------ 3. HELPERS ------------------
 @st.cache_data
 def get_pdf_base64(file_path):
     try:
-        with open(file_path, "rb") as f:
-            return base64.b64encode(f.read()).decode('utf-8')
+        with open(file_path, "rb") as f: return base64.b64encode(f.read()).decode('utf-8')
     except: return None
 
 def show_pdf(path):
@@ -69,8 +85,7 @@ def show_pdf(path):
 def payment_gateway(book_title, price, cat_key):
     st.markdown("<div style='background:white; padding:30px; border-radius:20px; border:2px solid #3b82f6;'>", unsafe_allow_html=True)
     st.subheader("🔒 Secure Checkout")
-    st.write(f"🛒 **Purchasing:** {book_title}")
-    st.markdown(f"<h3 style='color:#2563eb;'>Total: ₹{price}</h3>", unsafe_allow_html=True)
+    st.write(f"🛒 **Purchasing:** {book_title} (Price: ₹{price})")
     col1, col2 = st.columns(2)
     card = col1.text_input("Card Number", placeholder="XXXX XXXX XXXX XXXX", key=f"c_{cat_key}")
     cvv = col2.text_input("CVV", type="password", key=f"v_{cat_key}")
@@ -78,13 +93,21 @@ def payment_gateway(book_title, price, cat_key):
         if len(card) >= 12:
             with st.spinner("Processing..."): time.sleep(2)
             st.balloons(); st.success("Transaction Complete!"); return True
-        else: st.error("Invalid Details")
+        else: st.error("Invalid Card Details")
     st.markdown("</div>", unsafe_allow_html=True)
     return False
 
 # ------------------ 4. AUTH & SESSION ------------------
 if 'auth' not in st.session_state:
-    st.session_state.update({'auth': False, 'user': None, 'email': None, 'active_book': None, 'active_mode': None, 'last_update': datetime.now().strftime("%d %b %Y, %I:%M %p")})
+    st.session_state.update({
+        'auth': False, 
+        'user': None, 
+        'email': None, 
+        'active_book': None, 
+        'active_mode': None, 
+        'last_update': datetime.now().strftime("%d %b %Y, %I:%M %p"),
+        'celebrate': False
+    })
 
 if not st.session_state['auth']:
     st.markdown("<div class='hero-bg'><h1>📖 Apex Digital Library</h1><p>Modern Learning • Engineering Excellence</p></div>", unsafe_allow_html=True)
@@ -97,7 +120,7 @@ if not st.session_state['auth']:
             if st.button("Enter Library", use_container_width=True):
                 user = database.verify_login(e_in, p_in)
                 if user:
-                    st.session_state.update({'auth': True, 'user': user[0], 'email': e_in})
+                    st.session_state.update({'auth': True, 'user': user[0], 'email': e_in, 'celebrate': True})
                     st.rerun()
                 else: st.error("Verification failed.")
         with t2:
@@ -105,19 +128,36 @@ if not st.session_state['auth']:
             e_reg = st.text_input("Email").lower().strip()
             p_reg = st.text_input("Password", type="password")
             if st.button("Create Account", use_container_width=True):
-                database.add_user(n_reg, e_reg, p_reg); st.success("Account Created!")
+                if n_reg and e_reg and p_reg:
+                    database.add_user(n_reg, e_reg, p_reg)
+                    st.success("🎉 Hurrah! Thank you for joining our Apex family. Proceed to login!")
+                else: st.warning("Please fill all fields.")
 
 # ------------------ 5. MAIN APP ------------------
 else:
+    # Party Shower logic
+    if st.session_state['celebrate']:
+        st.balloons()
+        st.session_state['celebrate'] = False
+
+    # Sidebar Time & Greeting
+    draw_clock()
+    hour = datetime.now().hour
+    if hour < 12: greet = "🌅 Good Morning"
+    elif 12 <= hour < 17: greet = "☀️ Good Afternoon"
+    else: greet = "🌙 Good Evening"
+    
+    st.sidebar.markdown(f"### {greet},")
+    st.sidebar.title(f"{st.session_state['user']}!")
+    
     current_email = str(st.session_state['email']).lower().strip()
     is_admin = (current_email == ADMIN_EMAIL or current_email == "adithya@example.com")
     
-    st.sidebar.title(f"👋 Hi, {st.session_state['user']}")
     menu = ["📊 Dashboard", "📖 Explore Catalog"]
     if is_admin: menu.append("⚙️ Librarian Desk")
     
     choice = st.sidebar.selectbox("Navigation", menu)
-    if st.sidebar.button("Logout"):
+    if st.sidebar.button("Logout", use_container_width=True):
         st.session_state.update({'auth': False, 'active_book': None}); st.rerun()
 
     # A. DASHBOARD
@@ -147,12 +187,10 @@ else:
                         c1, c2 = st.columns(2)
                         if c1.button("👁️ Preview", key=f"v_{cat}_{b[0]}"):
                             st.session_state.update({'active_book': b[0], 'active_mode': 'preview'})
-                        
-                        # --- PRICE LOGIC ---
-                        if b[5] > 0: # Price exists
+                        if b[5] > 0:
                             if c2.button(f"₹{int(b[5])} Buy", key=f"b_{cat}_{b[0]}"):
                                 st.session_state.update({'active_book': b[0], 'active_mode': 'pay'})
-                        else: # Price is 0
+                        else:
                             if c2.button("📥 Get", key=f"d_{cat}_{b[0]}"):
                                 st.session_state.update({'active_book': b[0], 'active_mode': 'download'})
 
@@ -163,38 +201,26 @@ else:
                         if st.button("❌ Close Viewer", key=f"close_{cat}", use_container_width=True):
                             st.session_state['active_book'] = None; st.rerun()
                         mode = st.session_state['active_mode']
-                        if mode == "preview":
-                            show_pdf(active_b[6])
+                        if mode == "preview": show_pdf(active_b[6])
                         elif mode in ["pay", "download"]:
                             ok = payment_gateway(active_b[1], active_b[5], cat) if mode == "pay" else True
                             if ok:
                                 f_path = active_b[7]
-                                if str(f_path).startswith("http"):
-                                    st.link_button("🚀 Download Full Book", f_path, use_container_width=True)
+                                if str(f_path).startswith("http"): st.link_button("🚀 Download Full Book", f_path, use_container_width=True)
                                 else:
-                                    with open(f_path, "rb") as f:
-                                        st.download_button("💾 Download PDF", f, file_name=f"{active_b[1]}.pdf", use_container_width=True)
+                                    with open(f_path, "rb") as f: st.download_button("💾 Download PDF", f, file_name=f"{active_b[1]}.pdf", use_container_width=True)
 
     # C. LIBRARIAN DESK
     elif choice == "⚙️ Librarian Desk":
         st.title("🔐 Librarian Control Panel")
-        
-        # --- NEW MASTER RESET BUTTON ---
-        st.warning("⚠️ Change prices in code? Use this to sync the database.")
         if st.button("🔄 Reset & Refresh Database", use_container_width=True):
-            conn = database.connect_db()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM books") # Wipes the book table
-            conn.commit()
-            conn.close()
-            refresh_library_data() # Re-adds with new code prices
-            st.success("Database synced with current code prices!"); time.sleep(1); st.rerun()
+            conn = database.connect_db(); cursor = conn.cursor()
+            cursor.execute("DELETE FROM books"); conn.commit(); conn.close()
+            refresh_library_data(); st.success("Database synced!"); time.sleep(1); st.rerun()
 
         if st.button("📥 Export Audit Report (Excel)", use_container_width=True):
-            conn = database.connect_db()
-            df_books = pd.read_sql_query("SELECT * FROM books", conn)
-            df_users = pd.read_sql_query("SELECT name, email FROM users", conn)
-            conn.close()
+            conn = database.connect_db(); df_books = pd.read_sql_query("SELECT * FROM books", conn)
+            df_users = pd.read_sql_query("SELECT name, email FROM users", conn); conn.close()
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 df_books.to_excel(writer, sheet_name='Inventory', index=False)
