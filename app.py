@@ -17,10 +17,11 @@ for folder in ["previews", "full_books"]:
 # --- AUTO-STOCK ENGINE ---
 if not database.get_all_books():
     books_to_add = [
-        ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 1, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
-        ["Introduction to Python", "Guido van Rossum", "B.Tech", 1, 0.0, "previews/python_pre.pdf", "https://drive.google.com/uc?export=download&id=1AzZCmQV7l0_wLKJVXdRY-o3a9mDiEoXV"],
-        ["Neethikathalu", "Traditional", "Telugu", 1, 0.0, "previews/neethi_pre.pdf", "https://drive.google.com/uc?export=download&id=1CJVvRcYpPhObo4Nog7sIBqqfHcg5FvWf"],
-        ["Ramayan", "Valmiki", "Mythology", 1, 0.0, "previews/ramayan_pre.pdf", "https://drive.google.com/uc?export=download&id=1GHF1LNsDyHe8kzjBGQ0geCpVPJOJbR39"]
+        # Format: [Title, Author, Category, Stock, Price, Preview_Path, Full_Path]
+        ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 5, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
+        ["Introduction to Python", "Guido van Rossum", "B.Tech", 3, 0.0, "previews/python_pre.pdf", "https://drive.google.com/uc?export=download&id=1AzZCmQV7l0_wLKJVXdRY-o3a9mDiEoXV"],
+        ["Neethikathalu", "Traditional", "Telugu", 10, 0.0, "previews/neethi_pre.pdf", "https://drive.google.com/uc?export=download&id=1CJVvRcYpPhObo4Nog7sIBqqfHcg5FvWf"],
+        ["Ramayan", "Valmiki", "Mythology", 2, 0.0, "previews/ramayan_pre.pdf", "https://drive.google.com/uc?export=download&id=1GHF1LNsDyHe8kzjBGQ0geCpVPJOJbR39"]
     ]
     for b in books_to_add:
         database.add_book(b[0], b[1], b[2], b[3], b[4], b[5], b[6])
@@ -43,11 +44,7 @@ st.markdown("""
         display: flex; flex-direction: column; justify-content: center;
         text-align: center;
     }
-    .book-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 12px 24px rgba(0,0,0,0.1);
-        border-color: #3b82f6;
-    }
+    .book-card:hover { transform: translateY(-5px); border-color: #3b82f6; box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
     .book-title { color: #1f2937; font-weight: 800; font-size: 1.1rem; }
     .payment-box {
         background: #ffffff; padding: 30px; border-radius: 20px;
@@ -80,8 +77,7 @@ def show_pdf(path):
                     </div>
                 </object>'''
             st.markdown(pdf_display, unsafe_allow_html=True)
-    else:
-        st.error(f"Preview not found: {path}")
+    else: st.error(f"Preview not found: {path}")
 
 def payment_gateway(book_title, price, cat_key):
     st.markdown(f"<div class='payment-box'>", unsafe_allow_html=True)
@@ -126,9 +122,8 @@ if not st.session_state['auth']:
 
 # ------------------ 5. MAIN APP ------------------
 else:
-    # --- ADMIN CHECK ---
-    user_email = str(st.session_state['email']).lower().strip()
-    is_admin = (user_email == ADMIN_EMAIL or user_email == "adithya@example.com")
+    current_email = str(st.session_state['email']).lower().strip()
+    is_admin = (current_email == ADMIN_EMAIL or current_email == "adithya@example.com")
     
     st.sidebar.title(f"👋 Hi, {st.session_state['user']}")
     menu = ["📊 Dashboard", "📖 Explore Catalog"]
@@ -140,16 +135,26 @@ else:
     if st.sidebar.button("Logout"):
         st.session_state.update({'auth': False, 'active_book': None}); st.rerun()
 
-    # A. DASHBOARD
+    # A. DASHBOARD (UPDATED: showing books, stock, and status)
     if choice == "📊 Dashboard":
-        st.header("Library Inventory")
+        st.markdown("<div class='hero-bg'><h1>Library Dashboard</h1></div>", unsafe_allow_html=True)
         books = database.get_all_books()
-        st.metric("Total Books", len(books))
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("📚 No. of Books", len(books))
+        
+        # Calculate total stock across all books
+        total_stock = sum([b[4] for b in books]) if books else 0
+        c2.metric("📦 Stock Available", total_stock)
+        
+        c3.metric("⚡ System Status", "🟢 Online")
+        
         if books:
+            st.subheader("Inventory Detailed View")
             df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Category", "Stock", "Price", "URL", "Path"])
-            st.dataframe(df.drop(columns=["URL", "Path"]), use_container_width=True, hide_index=True)
+            st.dataframe(df[["Title", "Author", "Category", "Stock", "Price"]], use_container_width=True, hide_index=True)
 
-    # B. EXPLORE CATALOG (Includes Payment Logic)
+    # B. EXPLORE CATALOG
     elif choice == "📖 Explore Catalog":
         st.title("Resource Gallery")
         tabs = st.tabs(["🎓 B.Tech", "📜 Telugu", "🕉️ Mythology"])
@@ -163,13 +168,12 @@ else:
                 cols = st.columns(3)
                 for idx, b in enumerate(data):
                     with cols[idx % 3]:
-                        st.markdown(f"<div class='book-card'><div class='book-title'>{b[1]}</div><div>{b[2]}</div></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='book-card'><div class='book-title'>{b[1]}</div><div>{b[2]}</div><div style='font-size:0.8rem; color:#666;'>Stock: {b[4]}</div></div>", unsafe_allow_html=True)
                         c1, c2 = st.columns(2)
                         
                         if c1.button("👁️ Preview", key=f"v_{cat}_{b[0]}"):
                             st.session_state.update({'active_book': b[0], 'active_mode': 'preview'})
                         
-                        # Price Logic for Buy vs Get
                         if b[5] > 0:
                             if c2.button(f"₹{b[5]} Buy", key=f"b_{cat}_{b[0]}"):
                                 st.session_state.update({'active_book': b[0], 'active_mode': 'pay'})
@@ -177,7 +181,6 @@ else:
                             if c2.button("📥 Get", key=f"d_{cat}_{b[0]}"):
                                 st.session_state.update({'active_book': b[0], 'active_mode': 'download'})
 
-                # VIEWER SECTION
                 if st.session_state['active_book']:
                     active_b = next((x for x in data if x[0] == st.session_state['active_book']), None)
                     if active_b:
@@ -186,43 +189,50 @@ else:
                             st.session_state['active_book'] = None; st.rerun()
                         
                         mode = st.session_state['active_mode']
-                        
                         if mode == "preview":
                             show_pdf(active_b[6])
-                        
                         elif mode in ["pay", "download"]:
-                            # Triggers gateway if priced, otherwise passes through
                             payment_done = payment_gateway(active_b[1], active_b[5], cat) if mode == "pay" else True
-                            
                             if payment_done:
                                 f_path = active_b[7]
                                 if str(f_path).startswith("http"):
-                                    st.link_button("📥 Download Full Book (Drive)", f_path, use_container_width=True)
+                                    st.link_button("📥 Download Master File (Drive)", f_path, use_container_width=True)
                                 else:
                                     with open(f_path, "rb") as f:
                                         st.download_button("📥 Download Full Book (Local)", f, file_name=f"{active_b[1]}.pdf")
 
-    # C. LIBRARIAN DESK
+    # C. LIBRARIAN DESK (UPDATED: Added Number of Copies option)
     elif choice == "⚙️ Librarian Desk":
-        st.title("Admin Desk")
-        with st.form("add_book_form"):
-            t = st.text_input("Title")
-            a = st.text_input("Author")
-            c = st.selectbox("Genre", ["B.Tech", "Telugu", "Mythology"])
-            p = st.number_input("Price (₹)", 0.0)
-            is_link = st.checkbox("External Link (Drive)")
+        st.title("🔐 Librarian Control Panel")
+        with st.form("add_book_form", clear_on_submit=True):
+            col_in1, col_in2 = st.columns(2)
+            t = col_in1.text_input("Title")
+            a = col_in2.text_input("Author")
+            
+            cat = st.selectbox("Genre", ["B.Tech", "Telugu", "Mythology"])
+            
+            # --- NEW: Added Stock/Copies input ---
+            col_q1, col_q2 = st.columns(2)
+            stk = col_q1.number_input("Number of Copies (Stock)", min_value=1, value=1)
+            pr = col_q2.number_input("Price (₹)", 0.0)
+            
+            is_link = st.checkbox("External Link (Use for Drive links)")
             pre_f = st.file_uploader("Preview (GitHub)", type="pdf")
-            if is_link: val = st.text_input("Direct Link")
+            if is_link: val = st.text_input("Direct Link (Google Drive)")
             else: val = st.file_uploader("Full PDF (GitHub)", type="pdf")
             
-            if st.form_submit_button("🚀 Add Book"):
-                if t and a and pre_f and val:
+            if st.form_submit_button("🚀 Commit Book to Archives"):
+                if t and a and pre_f and (val):
                     ts = int(time.time())
                     pre_p = f"previews/{ts}_{pre_f.name}"
                     with open(pre_p, "wb") as f: f.write(pre_f.getbuffer())
+                    
                     if is_link: fin_p = val
                     else:
                         fin_p = f"full_books/{ts}_{val.name}"
                         with open(fin_p, "wb") as f: f.write(val.getbuffer())
-                    database.add_book(t, a, c, 1, p, pre_p, fin_p)
-                    st.success("Book Registered!")
+                    
+                    # Pass stk (stock) to the database function
+                    database.add_book(t, a, cat, stk, pr, pre_p, fin_p)
+                    st.success(f"'{t}' added with {stk} copies!")
+                    st.rerun()
