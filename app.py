@@ -14,6 +14,17 @@ ADMIN_EMAIL = "adithya@example.com"
 for folder in ["previews", "full_books"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
+# --- AUTO-STOCK ENGINE: Inserts your 4 major books if DB is empty ---
+if not database.get_all_books():
+    books_to_add = [
+        ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 1, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
+        ["Introduction to Python", "Guido van Rossum", "B.Tech", 1, 0.0, "previews/python_pre.pdf", "https://drive.google.com/uc?export=download&id=1AzZCmQV7l0_wLKJVXdRY-o3a9mDiEoXV"],
+        ["Neethikathalu", "Traditional", "Telugu", 1, 0.0, "previews/neethi_pre.pdf", "https://drive.google.com/uc?export=download&id=1CJVvRcYpPhObo4Nog7sIBqqfHcg5FvWf"],
+        ["Ramayan", "Valmiki", "Mythology", 1, 0.0, "previews/ramayan_pre.pdf", "https://drive.google.com/uc?export=download&id=1GHF1LNsDyHe8kzjBGQ0geCpVPJOJbR39"]
+    ]
+    for b in books_to_add:
+        database.add_book(b[0], b[1], b[2], b[3], b[4], b[5], b[6])
+
 # ------------------ 2. ADVANCED UI STYLING ------------------
 st.markdown("""
     <style>
@@ -53,13 +64,25 @@ st.markdown("""
 # ------------------ 3. PERFORMANCE HELPERS ------------------
 @st.cache_data
 def get_pdf_base64(file_path):
-    with open(file_path, "rb") as f:
-        return base64.b64encode(f.read()).decode('utf-8')
+    try:
+        with open(file_path, "rb") as f:
+            return base64.b64encode(f.read()).decode('utf-8')
+    except: return None
 
 def show_pdf(path):
     if os.path.exists(path):
         b64 = get_pdf_base64(path)
-        st.markdown(f'<div style="border-radius:15px; overflow:hidden; border:2px solid #3b82f6;"><iframe src="data:application/pdf;base64,{b64}" width="100%" height="700px" style="border:none;"></iframe></div>', unsafe_allow_html=True)
+        # Using <object> helps bypass standard Chrome security blocks
+        pdf_display = f'''
+            <object data="data:application/pdf;base64,{b64}" width="100%" height="750px" type="application/pdf" style="border-radius:15px; border:2px solid #3b82f6;">
+                <div style="padding:20px; text-align:center;">
+                    <p>Browser blocked the preview iframe.</p>
+                    <a href="data:application/pdf;base64,{b64}" download="preview.pdf" style="color:#3b82f6; font-weight:bold;">📥 Click here to Download Preview</a>
+                </div>
+            </object>'''
+        st.markdown(pdf_display, unsafe_allow_html=True)
+    else:
+        st.error(f"Preview archive not found on GitHub: {path}")
 
 def payment_gateway(book_title, price, cat_key):
     st.markdown(f"<div class='payment-box'>", unsafe_allow_html=True)
@@ -71,7 +94,7 @@ def payment_gateway(book_title, price, cat_key):
     cvv = col2.text_input("CVV", type="password", key=f"cvv_{cat_key}")
     if st.button("Unlock Full Book", key=f"final_pay_btn_{cat_key}"):
         if len(card) >= 12:
-            with st.spinner("Processing..."): time.sleep(3)
+            with st.spinner("Processing..."): time.sleep(2)
             st.balloons(); st.success("Success!"); return True
         else: st.error("Invalid Details")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -88,20 +111,20 @@ if not st.session_state['auth']:
     with c_b:
         t_auth1, t_auth2 = st.tabs(["🔒 Login", "📝 Register"])
         with t_auth1:
-            e_login = st.text_input("Email", key="l_email")
+            e_login = st.text_input("Email", key="l_email").lower().strip()
             p_login = st.text_input("Password", type="password", key="l_pass")
             if st.button("Access Library", key="l_btn"):
                 user = database.verify_login(e_login, p_login)
                 if user:
-                    st.session_state.update({'auth': True, 'user': user[1], 'email': user[2]})
+                    st.session_state.update({'auth': True, 'user': user[0], 'email': user[1]})
                     st.rerun()
-                else: st.error("Login Failed")
+                else: st.error("Verification Failed")
         with t_auth2:
             n_reg = st.text_input("Full Name", key="r_name")
-            e_reg = st.text_input("Email", key="r_email")
+            e_reg = st.text_input("Email", key="r_email").lower().strip()
             p_reg = st.text_input("Password", type="password", key="r_pass")
             if st.button("Create My Account", key="r_btn"):
-                database.add_user(n_reg, e_reg, p_reg); st.success("Registered!")
+                database.add_user(n_reg, e_reg, p_reg); st.success("Account Created!")
 
 # ------------------ 6. MAIN APP (Logged In) ------------------
 else:
@@ -112,7 +135,7 @@ else:
     
     choice = st.sidebar.selectbox("Navigation", menu)
     if st.sidebar.button("Logout", key="logout_btn"):
-        st.session_state['auth'] = False; st.rerun()
+        st.session_state.update({'auth': False, 'active_book': None}); st.rerun()
 
     # A. DASHBOARD
     if choice == "📊 Dashboard":
@@ -126,24 +149,23 @@ else:
             df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Category", "Stock", "Price", "URL", "Path"])
             st.dataframe(df.drop(columns=["URL", "Path"]), use_container_width=True, hide_index=True)
 
-    # B. EXPLORE CATALOG (With Duplicate ID Protection)
+    # B. EXPLORE CATALOG
     elif choice == "📖 Explore Catalog":
         st.title("Digital Shelves")
-        tabs = st.tabs(["🎓 B.Tech", "📜 Telugu", "🕉️ Mythology"])
         genres = ["B.Tech", "Telugu", "Mythology"]
+        tabs = st.tabs([f"📂 {g}" for g in genres])
         
         for i, cat in enumerate(genres):
             with tabs[i]:
                 data = database.get_books_by_category(cat)
-                if not data: st.info(f"No books in {cat} yet.")
+                if not data: st.info(f"The {cat} archive is currently empty.")
                 
-                # Grid of 3 columns
                 cols = st.columns(3)
                 for idx, b in enumerate(data):
                     with cols[idx % 3]:
-                        st.markdown(f"""<div class='book-card'><div class='book-title'>{b[1]}</div><div class='book-author'>{b[2]}</div></div>""", unsafe_allow_html=True)
+                        st.markdown(f"<div class='book-card'><div class='book-title'>{b[1]}</div><div class='book-author'>{b[2]}</div></div>", unsafe_allow_html=True)
                         btn_c1, btn_c2 = st.columns(2)
-                        # Added key=f"v_{cat}_{b[0]}" to keep it unique across tabs
+                        
                         if btn_c1.button("👁️ Preview", key=f"v_{cat}_{b[0]}"):
                             st.session_state['active_book'], st.session_state['active_mode'] = b[0], "preview"
                         
@@ -154,46 +176,68 @@ else:
                             if btn_c2.button("📥 Get", key=f"d_{cat}_{b[0]}"):
                                 st.session_state['active_book'], st.session_state['active_mode'] = b[0], "download"
 
-                # Central Viewer (Shows only if a book in THIS category is active)
+                # Central Hybrid Viewer Logic
                 if st.session_state['active_book']:
                     active_b = next((x for x in data if x[0] == st.session_state['active_book']), None)
                     if active_b:
                         st.divider()
-                        # UNIQUE KEY FOR CLOSE BUTTON
                         if st.button("❌ Close Viewer", key=f"close_btn_{cat}"):
                             st.session_state['active_book'] = None; st.rerun()
                         
                         mode = st.session_state['active_mode']
-                        if mode == "preview": show_pdf(active_b[6])
-                        elif mode == "pay":
-                            if payment_gateway(active_b[1], active_b[5], cat):
-                                with open(active_b[7], "rb") as f:
-                                    st.download_button("📂 Download Full Book", f, file_name=f"{active_b[1]}.pdf", key=f"dl_p_{cat}")
-                        elif mode == "download":
-                            with open(active_b[7], "rb") as f:
-                                st.download_button("📂 Download Full Book", f, file_name=f"{active_b[1]}.pdf", key=f"dl_f_{cat}")
+                        if mode == "preview": 
+                            show_pdf(active_b[6])
+                        
+                        elif mode in ["pay", "download"]:
+                            payment_ready = payment_gateway(active_b[1], active_b[5], cat) if mode == "pay" else True
+                            
+                            if payment_ready:
+                                full_path = active_b[7]
+                                # Hybrid Check: Google Drive vs Local GitHub
+                                if full_path.startswith("http"):
+                                    st.link_button("📥 Download Master File (External)", full_path, use_container_width=True)
+                                else:
+                                    try:
+                                        with open(full_path, "rb") as f:
+                                            st.download_button("📂 Download Full Book", f, file_name=f"{active_b[1]}.pdf", key=f"dl_btn_{cat}")
+                                    except:
+                                        st.error("Archive not found on GitHub. Please check Librarian Desk.")
 
     # C. LIBRARIAN DESK
     elif choice == "⚙️ Librarian Desk":
         st.title("🔐 Admin Control Panel")
-        if st.button("🧹 Refresh System Cache", key="refresh_cache_admin"):
-            st.cache_data.clear(); st.success("Refreshed!"); st.rerun()
+        if st.button("🧹 Clear System Cache"):
+            st.cache_data.clear(); st.success("System Refreshed!"); st.rerun()
 
         with st.form("add_book_form", clear_on_submit=True):
             col_in1, col_in2 = st.columns(2)
             t = col_in1.text_input("Title")
             a = col_in2.text_input("Author")
             cat = st.selectbox("Genre", ["B.Tech", "Telugu", "Mythology"])
-            pr = st.number_input("Price (0 for Free)", 0.0)
-            pre_file = st.file_uploader("10-Page Preview PDF", type="pdf")
-            full_file = st.file_uploader("Full Book PDF", type="pdf")
-            if st.form_submit_button("🚀 Finalize & Register Book"):
-                if t and a and pre_file and full_file:
+            pr = st.number_input("Price (₹)", 0.0)
+            
+            use_link = st.checkbox("External Link for Full Book (Use for files > 25MB)")
+            pre_file = st.file_uploader("10-Page Preview PDF (Max 25MB)", type="pdf")
+            
+            if use_link:
+                full_path_input = st.text_input("Paste Direct Download Link (e.g., Google Drive)")
+                full_file = None
+            else:
+                full_file = st.file_uploader("Full Book PDF (Max 25MB)", type="pdf")
+                full_path_input = ""
+
+            if st.form_submit_button("🚀 Commit Book to Archives"):
+                if t and a and pre_file and (full_file or full_path_input):
                     ts = int(time.time())
                     pre_p = os.path.join("previews", f"{ts}_{pre_file.name}")
-                    full_p = os.path.join("full_books", f"{ts}_{full_file.name}")
                     with open(pre_p, "wb") as f: f.write(pre_file.getbuffer())
-                    with open(full_p, "wb") as f: f.write(full_file.getbuffer())
+                    
+                    if not use_link:
+                        full_p = os.path.join("full_books", f"{ts}_{full_file.name}")
+                        with open(full_p, "wb") as f: f.write(full_file.getbuffer())
+                    else:
+                        full_p = full_path_input
+                    
                     database.add_book(t, a, cat, 1, pr, pre_p, full_p)
-                    st.cache_data.clear(); st.success("Book Added!")
-                else: st.error("All fields required.")
+                    st.success(f"'{t}' successfully registered!")
+                else: st.error("Required data missing.")
