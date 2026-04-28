@@ -3,7 +3,7 @@ import database
 import pandas as pd
 import os, base64, time, io
 import streamlit.components.v1 as components
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ------------------ 1. CONFIG & ADMIN SETUP ------------------
 st.set_page_config(page_title="Apex Digital Library", layout="wide", page_icon="📖")
@@ -100,12 +100,8 @@ def payment_gateway(book_title, price, cat_key):
 # ------------------ 4. AUTH & SESSION ------------------
 if 'auth' not in st.session_state:
     st.session_state.update({
-        'auth': False, 
-        'user': None, 
-        'email': None, 
-        'active_book': None, 
-        'active_mode': None, 
-        'last_update': datetime.now().strftime("%d %b %Y, %I:%M %p"),
+        'auth': False, 'user': None, 'email': None, 'active_book': None, 
+        'active_mode': None, 'last_update': datetime.now().strftime("%d %b %Y, %I:%M %p"),
         'celebrate': False
     })
 
@@ -138,11 +134,14 @@ else:
     # Party Shower logic
     if st.session_state['celebrate']:
         st.balloons()
+        st.toast(f"Welcome back to the library, {st.session_state['user']}! 🥳")
         st.session_state['celebrate'] = False
 
-    # Sidebar Time & Greeting
+    # Sidebar Time & Greeting (IST Correction)
     draw_clock()
-    hour = datetime.now().hour
+    ist_now = datetime.now() + timedelta(hours=5, minutes=30)
+    hour = ist_now.hour
+    
     if hour < 12: greet = "🌅 Good Morning"
     elif 12 <= hour < 17: greet = "☀️ Good Afternoon"
     else: greet = "🌙 Good Evening"
@@ -225,4 +224,4 @@ else:
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 df_books.to_excel(writer, sheet_name='Inventory', index=False)
                 df_users.to_excel(writer, sheet_name='Users', index=False)
-            st.download_button(label="📥 Download Report", data=buffer.getvalue(), file_name="Apex_Library_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button(label="📥 Download Excel Report", data=buffer.getvalue(), file_name="Apex_Library_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
