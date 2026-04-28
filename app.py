@@ -12,7 +12,7 @@ database.create_tables()
 # THE MASTER KEYS
 ADMIN_EMAIL = "adithya@example.com" 
 
-# Directory Management
+# Directory Management for Storage
 for folder in ["previews", "full_books"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
@@ -73,14 +73,26 @@ def draw_clock():
 def get_pdf_base64(file_path):
     try:
         with open(file_path, "rb") as f: return base64.b64encode(f.read()).decode('utf-8')
-    except: return None
+    except Exception as e:
+        return None
 
 def show_pdf(path):
     if os.path.exists(path):
         b64 = get_pdf_base64(path)
         if b64:
-            pdf_display = f'<object data="data:application/pdf;base64,{b64}" width="100%" height="800px" type="application/pdf" style="border-radius:20px; border:2px solid #3b82f6;"></object>'
+            # FIX: Using iframe for better compatibility on Cloud
+            pdf_display = f'''
+                <iframe src="data:application/pdf;base64,{b64}" 
+                        width="100%" height="800px" 
+                        style="border-radius:20px; border:2px solid #3b82f6;">
+                </iframe>
+            '''
             st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.error("❌ Critical: Failed to process PDF content.")
+    else:
+        st.error(f"📂 File Missing: The app cannot find '{path}' on GitHub.")
+        st.info("💡 Make sure you have uploaded your PDFs to the 'previews' folder in your repository.")
 
 def payment_gateway(book_title, price, cat_key):
     st.markdown("<div style='background:white; padding:30px; border-radius:20px; border:2px solid #3b82f6;'>", unsafe_allow_html=True)
@@ -229,7 +241,7 @@ else:
                 df_users.to_excel(writer, sheet_name='Users', index=False)
             st.download_button(label="📥 Download Excel Report", data=buffer.getvalue(), file_name="Apex_Library_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        # 2. Add New Resource Form (THE MISSING PIECE)
+        # 2. Add New Resource Form
         st.divider()
         st.subheader("➕ Add New Resource")
         with st.form("add_book_form", clear_on_submit=True):
@@ -253,21 +265,16 @@ else:
             if st.form_submit_button("🚀 Commit to Database", use_container_width=True):
                 if t and a and pre_f and val:
                     ts = int(time.time())
-                    # Process Preview
                     pre_p = f"previews/{ts}_{pre_f.name}"
                     with open(pre_p, "wb") as f: f.write(pre_f.getbuffer())
                     
-                    # Process Full Resource
-                    if is_link: 
-                        fin_p = val
+                    if is_link: fin_p = val
                     else:
                         fin_p = f"full_books/{ts}_{val.name}"
                         with open(fin_p, "wb") as f: f.write(val.getbuffer())
                     
-                    # Save to DB
                     database.add_book(t, a, cat, stk, pr, pre_p, fin_p)
                     st.success(f"Successfully added '{t}' to the catalog!")
-                    time.sleep(1)
-                    st.rerun()
+                    time.sleep(1); st.rerun()
                 else:
-                    st.error("Please fill in all details and upload files.")
+                    st.error("Please fill in all details.")
