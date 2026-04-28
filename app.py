@@ -12,11 +12,11 @@ database.create_tables()
 # THE MASTER KEYS
 ADMIN_EMAIL = "adithya@example.com" 
 
-# Directory Management for Storage
+# Folder Management for Storage
 for folder in ["previews", "full_books"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
-# --- AUTO-STOCK ENGINE: Specific Pricing Applied ---
+# --- AUTO-STOCK ENGINE: Mixed Pricing Applied ---
 def refresh_library_data():
     books_to_add = [
         ["Microelectronic Circuits", "Adel Sedra", "B.Tech", 5, 0.0, "previews/micro_pre.pdf", "https://drive.google.com/uc?export=download&id=1dNx66_LSW3mojyvJUukP5BjdFI9IURLS"],
@@ -73,26 +73,19 @@ def draw_clock():
 def get_pdf_base64(file_path):
     try:
         with open(file_path, "rb") as f: return base64.b64encode(f.read()).decode('utf-8')
-    except Exception as e:
-        return None
+    except: return None
 
 def show_pdf(path):
     if os.path.exists(path):
         b64 = get_pdf_base64(path)
         if b64:
-            # FIX: Using iframe for better compatibility on Cloud
-            pdf_display = f'''
-                <iframe src="data:application/pdf;base64,{b64}" 
-                        width="100%" height="800px" 
-                        style="border-radius:20px; border:2px solid #3b82f6;">
-                </iframe>
-            '''
+            pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800px" style="border-radius:20px; border:2px solid #3b82f6;"></iframe>'
             st.markdown(pdf_display, unsafe_allow_html=True)
         else:
-            st.error("❌ Critical: Failed to process PDF content.")
+            st.error("❌ Error: Could not process PDF data.")
     else:
-        st.error(f"📂 File Missing: The app cannot find '{path}' on GitHub.")
-        st.info("💡 Make sure you have uploaded your PDFs to the 'previews' folder in your repository.")
+        st.error(f"📂 File Missing: Cannot find '{path}' on GitHub.")
+        st.info("💡 Ensure files are uploaded to the 'previews' folder on GitHub.")
 
 def payment_gateway(book_title, price, cat_key):
     st.markdown("<div style='background:white; padding:30px; border-radius:20px; border:2px solid #3b82f6;'>", unsafe_allow_html=True)
@@ -105,7 +98,7 @@ def payment_gateway(book_title, price, cat_key):
         if len(card) >= 12:
             with st.spinner("Processing..."): time.sleep(2)
             st.balloons(); st.success("Transaction Complete!"); return True
-        else: st.error("Invalid Card Details")
+        else: st.error("Invalid Details")
     st.markdown("</div>", unsafe_allow_html=True)
     return False
 
@@ -143,24 +136,24 @@ if not st.session_state['auth']:
 
 # ------------------ 5. MAIN APP ------------------
 else:
-    # Party Shower logic
     if st.session_state['celebrate']:
-        st.balloons()
-        st.toast(f"Welcome back to the library, {st.session_state['user']}! 🥳")
+        st.balloons(); st.toast(f"Welcome, {st.session_state['user']}! 🥳")
         st.session_state['celebrate'] = False
 
-    # Sidebar Time & Greeting (IST Correction)
+    # Sidebar
     draw_clock()
     ist_now = datetime.now() + timedelta(hours=5, minutes=30)
     hour = ist_now.hour
-    
-    if hour < 12: greet = "🌅 Good Morning"
-    elif 12 <= hour < 17: greet = "☀️ Good Afternoon"
-    else: greet = "🌙 Good Evening"
+    greet = "🌅 Good Morning" if hour < 12 else "☀️ Good Afternoon" if hour < 17 else "🌙 Good Evening"
     
     st.sidebar.markdown(f"### {greet},")
     st.sidebar.title(f"{st.session_state['user']}!")
     
+    # Debug Tool in Sidebar
+    st.sidebar.divider()
+    if st.sidebar.checkbox("🧪 Debug: Check Files"):
+        st.sidebar.write(os.listdir("previews") if os.path.exists("previews") else "Folder Missing")
+
     current_email = str(st.session_state['email']).lower().strip()
     is_admin = (current_email == ADMIN_EMAIL or current_email == "adithya@example.com")
     
@@ -176,12 +169,10 @@ else:
         st.markdown("<div class='hero-bg'><h1>Library Metrics</h1></div>", unsafe_allow_html=True)
         books = database.get_all_books()
         c1, c2, c3 = st.columns(3)
-        c1.metric("📚 Unique Titles", len(books))
-        c2.metric("📦 Stock Available", sum([b[4] for b in books]) if books else 0)
-        c3.metric("⚡ Status", "🟢 Online")
+        c1.metric("📚 Unique Titles", len(books)); c2.metric("📦 Status", "🟢 Online"); c3.metric("💻 Node", "Primary Server")
         if books:
             df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Category", "Stock", "Price", "URL", "Path"])
-            st.dataframe(df[["Title", "Author", "Category", "Stock", "Price"]], use_container_width=True, hide_index=True)
+            st.dataframe(df[["Title", "Author", "Category", "Price"]], use_container_width=True, hide_index=True)
 
     # B. EXPLORE CATALOG
     elif choice == "📖 Explore Catalog":
@@ -194,7 +185,7 @@ else:
                 cols = st.columns(3)
                 for idx, b in enumerate(data):
                     with cols[idx % 3]:
-                        st.markdown(f"<div class='book-card'><div class='book-title'>{b[1]}</div><div>{b[2]}</div><div style='font-size:0.8rem; color:#666;'>Copies: {b[4]}</div></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='book-card'><div class='book-title'>{b[1]}</div><div>{b[2]}</div></div>", unsafe_allow_html=True)
                         c1, c2 = st.columns(2)
                         if c1.button("👁️ Preview", key=f"v_{cat}_{b[0]}"):
                             st.session_state.update({'active_book': b[0], 'active_mode': 'preview'})
@@ -217,64 +208,38 @@ else:
                             ok = payment_gateway(active_b[1], active_b[5], cat) if mode == "pay" else True
                             if ok:
                                 f_path = active_b[7]
-                                if str(f_path).startswith("http"): st.link_button("🚀 Download Full Book", f_path, use_container_width=True)
+                                if str(f_path).startswith("http"): st.link_button("🚀 Download", f_path, use_container_width=True)
                                 else:
-                                    with open(f_path, "rb") as f: st.download_button("💾 Download PDF", f, file_name=f"{active_b[1]}.pdf", use_container_width=True)
+                                    with open(f_path, "rb") as f: st.download_button("💾 PDF", f, file_name=f"{active_b[1]}.pdf", use_container_width=True)
 
     # C. LIBRARIAN DESK
     elif choice == "⚙️ Librarian Desk":
         st.title("🔐 Librarian Control Panel")
-        
-        # 1. Master Reset & Audit Report
         col_r1, col_r2 = st.columns(2)
         if col_r1.button("🔄 Reset & Refresh Database", use_container_width=True):
-            conn = database.connect_db(); cursor = conn.cursor()
-            cursor.execute("DELETE FROM books"); conn.commit(); conn.close()
+            conn = database.connect_db(); cursor = conn.cursor(); cursor.execute("DELETE FROM books"); conn.commit(); conn.close()
             refresh_library_data(); st.success("Database synced!"); time.sleep(1); st.rerun()
-
         if col_r2.button("📥 Export Audit Report (Excel)", use_container_width=True):
-            conn = database.connect_db(); df_books = pd.read_sql_query("SELECT * FROM books", conn)
-            df_users = pd.read_sql_query("SELECT name, email FROM users", conn); conn.close()
+            conn = database.connect_db(); df_b = pd.read_sql_query("SELECT * FROM books", conn); df_u = pd.read_sql_query("SELECT name, email FROM users", conn); conn.close()
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df_books.to_excel(writer, sheet_name='Inventory', index=False)
-                df_users.to_excel(writer, sheet_name='Users', index=False)
-            st.download_button(label="📥 Download Excel Report", data=buffer.getvalue(), file_name="Apex_Library_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                df_b.to_excel(writer, sheet_name='Inventory', index=False); df_u.to_excel(writer, sheet_name='Users', index=False)
+            st.download_button(label="📥 Download Excel", data=buffer.getvalue(), file_name="Apex_Report.xlsx")
 
-        # 2. Add New Resource Form
-        st.divider()
-        st.subheader("➕ Add New Resource")
+        st.divider(); st.subheader("➕ Add New Resource")
         with st.form("add_book_form", clear_on_submit=True):
             col_a, col_b = st.columns(2)
-            t = col_a.text_input("Resource Title")
-            a = col_b.text_input("Author Name")
-            cat = st.selectbox("Category", ["B.Tech", "Telugu", "Mythology"])
-            
+            t = col_a.text_input("Title"); a = col_b.text_input("Author"); cat = st.selectbox("Category", ["B.Tech", "Telugu", "Mythology"])
             col_q1, col_q2 = st.columns(2)
-            stk = col_q1.number_input("Stock Count", min_value=1, value=1)
-            pr = col_q2.number_input("Retail Price (₹)", 0.0)
-            
-            is_link = st.checkbox("External Link (Google Drive)")
-            pre_f = st.file_uploader("Sample Preview (PDF)", type="pdf")
-            
-            if is_link: 
-                val = st.text_input("Resource URL")
-            else: 
-                val = st.file_uploader("Full Resource (PDF)", type="pdf")
-            
+            stk = col_q1.number_input("Stock", min_value=1, value=1); pr = col_q2.number_input("Price (₹)", 0.0)
+            is_link = st.checkbox("External Link"); pre_f = st.file_uploader("Preview PDF", type="pdf")
+            val = st.text_input("URL") if is_link else st.file_uploader("Full PDF", type="pdf")
             if st.form_submit_button("🚀 Commit to Database", use_container_width=True):
                 if t and a and pre_f and val:
-                    ts = int(time.time())
-                    pre_p = f"previews/{ts}_{pre_f.name}"
+                    ts = int(time.time()); pre_p = f"previews/{ts}_{pre_f.name}"
                     with open(pre_p, "wb") as f: f.write(pre_f.getbuffer())
-                    
                     if is_link: fin_p = val
                     else:
                         fin_p = f"full_books/{ts}_{val.name}"
                         with open(fin_p, "wb") as f: f.write(val.getbuffer())
-                    
-                    database.add_book(t, a, cat, stk, pr, pre_p, fin_p)
-                    st.success(f"Successfully added '{t}' to the catalog!")
-                    time.sleep(1); st.rerun()
-                else:
-                    st.error("Please fill in all details.")
+                    database.add_book(t, a, cat, stk, pr, pre_p, fin_p); st.success(f"Added '{t}'!"); time.sleep(1); st.rerun()
